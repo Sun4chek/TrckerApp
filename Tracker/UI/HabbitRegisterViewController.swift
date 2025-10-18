@@ -26,14 +26,20 @@ protocol HabbitRegisterViewControllerDelegate: AnyObject {
 class HabbitRegisterViewController: UIViewController {
     
     
-    let emojiSet  :  [String] = []
-    let colors : [String] = []
-        
+    private var selectedEmojiIndexPath: IndexPath?
+    private var selectedColorIndexPath: IndexPath?
+    let itemsPerRow: CGFloat = 6
+    let spacing: CGFloat = 5
+    let sectionInsets = UIEdgeInsets(top: 24, left: 18, bottom: 40, right: 18)
+    
+    let emojiSet  :  [String] = ["🙂","😻","🌺","🐶","❤️","😱","😇","😡","🥶","🤔","🙌","🍔","🥦","🏓","🥇","🎸","🏝️","😪"]
+    let colors : [String] = ["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18"]
+    
     private var selectedCategory: String = "Важное"
     private let scrollView = UIScrollView()
     private let contentView = UIView()
     weak var delegate: HabbitRegisterViewControllerDelegate?
-
+    
     // высота таблицы (мы будем менять .constant после layout)
     private var tableViewHeightConstraint: NSLayoutConstraint?
     private let rowHeight: CGFloat = 75
@@ -70,7 +76,7 @@ class HabbitRegisterViewController: UIViewController {
         tf.translatesAutoresizingMaskIntoConstraints = false
         return tf
     }()
-
+    
     private var scheduleOrCategoryTableView: UITableView = {
         let table = UITableView(frame: .zero, style: .plain)
         table.backgroundColor = .clear
@@ -95,7 +101,7 @@ class HabbitRegisterViewController: UIViewController {
         button.backgroundColor = .clear
         button.layer.cornerRadius = 16
         button.layer.borderWidth = 1
-           button.layer.borderColor = UIColor.systemRed.cgColor
+        button.layer.borderColor = UIColor.systemRed.cgColor
         button.widthAnchor.constraint(equalToConstant: 166).isActive = true
         button.heightAnchor.constraint(equalToConstant: 60).isActive = true
         return button
@@ -118,34 +124,32 @@ class HabbitRegisterViewController: UIViewController {
     
     
     
-//    private let emojiAndColorCollectionView: UICollectionView = {
-//        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
-//        collectionView.register(TrackerCreateCell.self, forCellWithReuseIdentifier: "TrackerCreateCell")
-//        
-//        
-//        
-//        
-//        
-//        
-//        
-//        
-//        return collectionView
-//    }()
+    private let emojiAndColorCollectionView: UICollectionView = {
+        let layout = UICollectionViewFlowLayout()
+        layout.scrollDirection = .vertical
+        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
+        collectionView.backgroundColor = .clear
+        collectionView.register(TrackerCreateCell.self, forCellWithReuseIdentifier: "TrackerCreateCell")
+        collectionView.translatesAutoresizingMaskIntoConstraints = false
+        collectionView.register(SectionHeader.self,
+                                forSupplementaryViewOfKind: UICollectionView.elementKindSectionHeader,
+                                withReuseIdentifier: "Header")
+        collectionView.isScrollEnabled = false
 
+        return collectionView
+    }()
+    
     private func updateCreateButtonState() {
-        // Проверяем: текст есть и выбраны дни
         let hasText = !(nameTextField.text?.isEmpty ?? true)
         let hasSchedule = !(options[1].selectedDays?.isEmpty ?? true)
+        let hasSelectedEmoji = selectedEmojiIndexPath != nil
+        let hasSelectedColor = selectedColorIndexPath != nil
         
-        if hasText && hasSchedule {
-            createButton.isEnabled = true
-            createButton.backgroundColor = .black
-            createButton.setTitleColor(.white, for: .normal)
-        } else {
-            createButton.isEnabled = false
-            createButton.backgroundColor = .systemGray6
-            createButton.setTitleColor(.systemGray, for: .normal)
-        }
+        let isReady = hasText && hasSchedule && hasSelectedEmoji && hasSelectedColor
+        
+        createButton.isEnabled = isReady
+        createButton.backgroundColor = isReady ? .black : .systemGray6
+        createButton.setTitleColor(isReady ? .white : .systemGray, for: .normal)
     }
     
     
@@ -159,7 +163,7 @@ class HabbitRegisterViewController: UIViewController {
     
     
     
-
+    
     // MARK: - Lifecycle
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -167,12 +171,12 @@ class HabbitRegisterViewController: UIViewController {
         nameTextField.returnKeyType = .done
         scheduleOrCategoryTableView.dataSource = self
         scheduleOrCategoryTableView.delegate = self
-//        emojiAndColorCollectionView.dataSource = self
-//        emojiAndColorCollectionView.delegate = self
-
+                emojiAndColorCollectionView.dataSource = self
+                emojiAndColorCollectionView.delegate = self
+        
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(hideKeyboard))
-            tapGesture.cancelsTouchesInView = false
-            view.addGestureRecognizer(tapGesture)
+        tapGesture.cancelsTouchesInView = false
+        view.addGestureRecognizer(tapGesture)
         
         
         view.backgroundColor = .systemBackground
@@ -184,11 +188,9 @@ class HabbitRegisterViewController: UIViewController {
         scheduleOrCategoryTableView.reloadData()
     }
     
-    @objc private func hideKeyboard() {
-        view.endEditing(true)
-    }
+  
     
-
+    
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         // Обновляем высоту таблицы по её contentSize — это важно
@@ -198,35 +200,42 @@ class HabbitRegisterViewController: UIViewController {
             tableViewHeightConstraint?.constant = height
             // если нужно, можно анимировать, но не обязательно
         }
+        
+        let collectionHeight = calculateCollectionViewHeight()
+           emojiAndColorCollectionView.heightAnchor.constraint(equalToConstant: collectionHeight).isActive = true
     }
-
+    
     // MARK: - UI setup
+ 
+    
+    
+    
     private func setupUI() {
         // добавляем scrollView
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(scrollView)
-
+        
         NSLayoutConstraint.activate([
             scrollView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
-
-        // contentView — внутри scrollView, привязываемся к contentLayoutGuide и frameLayoutGuide
+        
         contentView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.addSubview(contentView)
-
+        
         let contentGuide = scrollView.contentLayoutGuide
         let frameGuide = scrollView.frameLayoutGuide
-
+        
         NSLayoutConstraint.activate([
             // Привязки по контенту
             contentView.topAnchor.constraint(equalTo: contentGuide.topAnchor),
             contentView.leadingAnchor.constraint(equalTo: contentGuide.leadingAnchor, constant: 16),  // боковой inset
             contentView.trailingAnchor.constraint(equalTo: contentGuide.trailingAnchor, constant: -16),
-           
-
+            
+            
+            contentView.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
             // ширина contentView = ширина frame - 32 (16+16) — гарантирует корректную область для сабвью
             contentView.widthAnchor.constraint(equalTo: frameGuide.widthAnchor, constant: -32)
         ])
@@ -239,15 +248,16 @@ class HabbitRegisterViewController: UIViewController {
         stack.translatesAutoresizingMaskIntoConstraints = false
         
         
-
+        
         // Добавляем сабвью внутрь contentView
         contentView.addSubview(nameTextField)
         contentView.addSubview(warningLabel)
         contentView.addSubview(scheduleOrCategoryTableView)
+        contentView.addSubview(emojiAndColorCollectionView)
         contentView.addSubview(stack)
-
         
-    
+        
+        
         
         // Констрейнты для текстового поля
         NSLayoutConstraint.activate([
@@ -263,33 +273,86 @@ class HabbitRegisterViewController: UIViewController {
         ])
         
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: scheduleOrCategoryTableView.bottomAnchor, constant: 24),
-            stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 4),
-            stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -4),
+            stack.topAnchor.constraint(equalTo: emojiAndColorCollectionView.bottomAnchor, constant: 16),
+               stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 4),
+               stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -4),
             
             cancelButton.heightAnchor.constraint(equalToConstant: 75),
             createButton.heightAnchor.constraint(equalToConstant: 75)
         ])
         contentView.bottomAnchor.constraint(equalTo: stack.bottomAnchor, constant: 24).isActive = true
-
+        
         // Констрейнты для таблицы: top, leading, trailing, height; а также bottom привязка к contentView.bottom
         tableViewHeightConstraint = scheduleOrCategoryTableView.heightAnchor.constraint(equalToConstant: CGFloat(options.count) * rowHeight)
         tableViewHeightConstraint?.isActive = true
-
+        
         NSLayoutConstraint.activate([
             scheduleOrCategoryTableView.topAnchor.constraint(equalTo: warningLabel.bottomAnchor, constant: 24),
             scheduleOrCategoryTableView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             scheduleOrCategoryTableView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-           
+            
         ])
+        
+        
+        
+        NSLayoutConstraint.activate([
+            emojiAndColorCollectionView.topAnchor.constraint(equalTo: scheduleOrCategoryTableView.bottomAnchor, constant: 32),
+            emojiAndColorCollectionView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor ),
+            emojiAndColorCollectionView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+             // пример, потом можно вычислить динамически
+            ])
+            
+    }
+    
+    
+    private func calculateCollectionViewHeight() -> CGFloat {
+        let numberOfSections = 2
+        let itemsPerSection = emojiSet.count // предполагаем, что в обеих секциях одинаковое количество
+        
+        // Высота заголовков секций
+        let headerHeight: CGFloat = 32
+        let totalHeadersHeight = CGFloat(numberOfSections) * headerHeight
+        
+        // Высота отступов секций
+        let sectionInsetsTop: CGFloat = 24
+        let sectionInsetsBottom: CGFloat = 40
+        let totalInsetsHeight = CGFloat(numberOfSections) * (sectionInsetsTop + sectionInsetsBottom)
+        
+        // Расчет количества строк в секции
+        let itemsPerRow: CGFloat = 6
+        let rowsPerSection = ceil(CGFloat(itemsPerSection) / itemsPerRow)
+        
+        // Высота одной ячейки
+        let availableWidth = view.bounds.width - 32 - 4 // ширина contentView - отступы
+        let totalSpacing = sectionInsets.left + sectionInsets.right + (itemsPerRow - 1) * spacing
+        let itemWidth = (availableWidth - totalSpacing) / itemsPerRow
+        let cellHeight = itemWidth
+        
+        // Общая высота ячеек
+        let totalCellsHeight = CGFloat(numberOfSections) * rowsPerSection * cellHeight
+        
+        // Общая высота коллекции
+        let totalHeight = totalHeadersHeight + totalInsetsHeight + totalCellsHeight
+        
+        return totalHeight
     }
 
+    
+    
+    
     private func openScheduleScreen() {
         let vc = ScheduleViewController()
         vc.view.backgroundColor = .systemBackground
         vc.title = "Расписание"
         navigationController?.pushViewController(vc, animated: true)
     }
+    
+// MARK: - objc methods
+    
+    @objc private func hideKeyboard() {
+        view.endEditing(true)
+    }
+    
     
     @objc private func cancelButtonTapped() {
         dismiss(animated: true)
@@ -301,33 +364,43 @@ class HabbitRegisterViewController: UIViewController {
     }
     
     @objc private func createButtonTapped() {
-        if let habitTitle = nameTextField.text {
-   
-            
-            let newTracker = Tracker(id: UUID(),
-                                     name: habitTitle,
-                                     color: .ypBlue,
-                                     emoji: "",
-                                     schedule: selectedDays)
-            delegate?.didCreateNewTracker(newTracker)
-            
-            print("новый трекер готов")
-            dismiss(animated: true)
+        guard let habitTitle = nameTextField.text,
+              !habitTitle.isEmpty,
+              let emojiIndexPath = selectedEmojiIndexPath,
+              let colorIndexPath = selectedColorIndexPath else {
+            return
         }
+        
+        let selectedEmoji = emojiSet[emojiIndexPath.row]
+        let selectedColorName = colors[colorIndexPath.row]
+        
+        // Преобразуем название цвета в UIColor
+        let selectedColor = UIColor(named: selectedColorName) ?? .blue
+        
+        let newTracker = Tracker(
+            id: UUID(),
+            name: habitTitle,
+            color: selectedColor,  // теперь передаем UIColor
+            emoji: selectedEmoji,
+            schedule: selectedDays
+        )
+        
+        delegate?.didCreateNewTracker(newTracker)
+        dismiss(animated: true)
     }
 }
 
 // MARK: - UITableViewDataSource
 
 extension HabbitRegisterViewController: UITableViewDataSource {
-
+    
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         return options.count
     }
-
+    
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let option = options[indexPath.row]
-        let cell = tableView.dequeueReusableCell(withIdentifier: "SettingsCell", for: indexPath) as! SettingsCell
+        guard let cell = tableView.dequeueReusableCell(withIdentifier: "SettingsCell", for: indexPath) as? SettingsCell else { return UITableViewCell() }
         cell.configure(title: option.title, detail: option.detail, accessory: option.accessory)
         cell.backgroundColor = .secondarySystemBackground
         cell.contentView.backgroundColor = .secondarySystemBackground
@@ -337,7 +410,7 @@ extension HabbitRegisterViewController: UITableViewDataSource {
 
 // MARK: - UITableViewDelegate
 extension HabbitRegisterViewController: UITableViewDelegate {
-
+    
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         switch indexPath.row {
@@ -364,11 +437,11 @@ extension HabbitRegisterViewController: UITableViewDelegate {
             break
         }
     }
-
+    
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
         return rowHeight
     }
-
+    
     func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
         if indexPath.row == options.count - 1 {
             cell.separatorInset = UIEdgeInsets(top: 0, left: cell.bounds.width, bottom: 0, right: 0)
@@ -403,82 +476,153 @@ extension HabbitRegisterViewController: UITextFieldDelegate {
     }
     
     func textField(_ textField: UITextField,
-                      shouldChangeCharactersIn range: NSRange,
-                      replacementString string: String) -> Bool {
-           guard let currentText = textField.text as NSString? else { return true }
-           let newText = currentText.replacingCharacters(in: range, with: string)
+                   shouldChangeCharactersIn range: NSRange,
+                   replacementString string: String) -> Bool {
+        guard let currentText = textField.text as NSString? else { return true }
+        let newText = currentText.replacingCharacters(in: range, with: string)
         
-            let maxLength: Int = 38
+        let maxLength: Int = 38
         
-           if newText.count > maxLength {
-               warningLabel.isHidden = false
-               
-           } else {
-               warningLabel.isHidden = true
-           }
-           
-        return newText.count <= maxLength // если хочешь запретить ввод после 38 символов → return newText.count <= maxLength
-       }
+        if newText.count > maxLength {
+            warningLabel.isHidden = false
+            
+        } else {
+            warningLabel.isHidden = true
+        }
+        
+        return newText.count <= maxLength
+    }
 }
-//
-//extension HabbitRegisterViewController : UICollectionViewDataSource {
-//    
-//
-//    
-//    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
-//        if section == 0 {
-//            return emojiSet.count
-//        } else {
-//            return colors.count
-//        }
-//    }
-//    
-//    func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
-//        let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "TrackerCreateCell", for: indexPath) as! TrackerCreateCell
-//        
-//        if indexPath.section == 0 {
-//            cell.config(type: .image, name : emojiSet[indexPath.row] )
-//        } else {
-//            cell.config(type: .color, name : colors[indexPath.row] )
-//        }
-//
-//        return cell
-//    }
-//    
-//    
-//}
 
-//
-//extension HabbitRegisterViewController: UICollectionViewDelegateFlowLayout {
-//    
-//    func numberOfSections(in collectionView: UICollectionView) -> Int {
-//        return 2 // секция 0 = Emoji, секция 1 = Цвета
-//    }
-//    
-//    func collectionView(_ collectionView: UICollectionView,
-//                        layout collectionViewLayout: UICollectionViewLayout,
-//                        sizeForItemAt indexPath: IndexPath) -> CGSize {
-//        return CGSize(width: 52, height: 52)
-//    }
-//    
-//    func collectionView(_ collectionView: UICollectionView,
-//                        layout collectionViewLayout: UICollectionViewLayout,
-//                        insetForSectionAt section: Int) -> UIEdgeInsets {
-//        return UIEdgeInsets(top: 24, left: 18, bottom: 40, right: 18)
-//    }
-//    
-//    func collectionView(_ collectionView: UICollectionView,
-//                        layout collectionViewLayout: UICollectionViewLayout,
-//                        minimumLineSpacingForSectionAt section: Int) -> CGFloat {
-//        return 0 // ячейка строго под ячейкой
-//    }
-//
-//    func collectionView(_ collectionView: UICollectionView,
-//                        layout collectionViewLayout: UICollectionViewLayout,
-//                        minimumInteritemSpacingForSectionAt section: Int) -> CGFloat {
-//        return 5 // отступ между ячейками по горизонтали
-//    }
-//}
+
+// MARK: - UICollectionViewDataSource
+extension HabbitRegisterViewController : UICollectionViewDataSource {
+    
+    
+    
+    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
+        if section == 0 {
+            return emojiSet.count
+        } else {
+            return colors.count
+        }
+    }
+    
+    
+    
+    
+
+    func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+        guard let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "TrackerCreateCell", for: indexPath) as? TrackerCreateCell else { return UICollectionViewCell()}
+        
+        if indexPath.section == 0 {
+            cell.config(type: .image, name : emojiSet[indexPath.row] )
+        } else {
+            cell.config(type: .color, name : colors[indexPath.row] )
+        }
+        
+        return cell
+    }
+    
+    
+}
+
+// MARK: - UICollectionViewDelegate
+extension HabbitRegisterViewController: UICollectionViewDelegate {
+    func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+        
+        if indexPath.section == 0 {
+            // Emoji секция
+            if let previous = selectedEmojiIndexPath {
+                // Снимаем выделение с предыдущего emoji
+                if let cell = collectionView.cellForItem(at: previous) as? TrackerCreateCell {
+                    cell.deselect()
+                }
+            }
+            // Выделяем новый emoji
+            if let cell = collectionView.cellForItem(at: indexPath) as? TrackerCreateCell {
+                cell.select()
+            }
+            selectedEmojiIndexPath = indexPath
+            
+        } else if indexPath.section == 1 {
+            // Цвета секция
+            if let previous = selectedColorIndexPath {
+                // Снимаем выделение с предыдущего цвета
+                if let cell = collectionView.cellForItem(at: previous) as? TrackerCreateCell {
+                    cell.deselect()
+                }
+            }
+            // Выделяем новый цвет
+            if let cell = collectionView.cellForItem(at: indexPath) as? TrackerCreateCell {
+                cell.select()
+            }
+            selectedColorIndexPath = indexPath
+        }
+        updateCreateButtonState()
+    }
+    
+
+}
+
+// MARK: - UICollectionViewDelegateFlowLayout
+extension HabbitRegisterViewController: UICollectionViewDelegateFlowLayout {
+    
+    func numberOfSections(in collectionView: UICollectionView) -> Int {
+        return 2 // секция 0 = Emoji, секция 1 = Цвета
+    }
+    
+    func collectionView(_ collectionView: UICollectionView,
+                        viewForSupplementaryElementOfKind kind: String,
+                        at indexPath: IndexPath) -> UICollectionReusableView {
+        guard kind == UICollectionView.elementKindSectionHeader else { return UICollectionReusableView() }
+        
+        guard let header = collectionView.dequeueReusableSupplementaryView(ofKind: kind,
+                                                                     withReuseIdentifier: "Header",
+                                                                           for: indexPath) as? SectionHeader else {
+            return UICollectionReusableView()
+        }
+        header.label.text = indexPath.section == 0 ? "Emoji" : "Цвета"
+        return header
+    }
+
+    
+    func collectionView(_ collectionView: UICollectionView,
+                        layout collectionViewLayout: UICollectionViewLayout,
+                        referenceSizeForHeaderInSection section: Int) -> CGSize {
+        // верни ноль, если заголовок не нужен; сейчас вернём высоту 44
+        return CGSize(width: collectionView.bounds.width, height: 32)
+    }
+    
+    
+
+    func collectionView(_ collectionView: UICollectionView,
+                        layout collectionViewLayout: UICollectionViewLayout,
+                        sizeForItemAt indexPath: IndexPath) -> CGSize {
+        let totalSpacing = sectionInsets.left + sectionInsets.right + (itemsPerRow - 1) * spacing
+        let availableWidth = collectionView.bounds.width - totalSpacing
+        let itemWidth = floor(availableWidth / itemsPerRow)
+        return CGSize(width: itemWidth, height: itemWidth)
+    }
+    
+    func collectionView(_ collectionView: UICollectionView,
+                        layout collectionViewLayout: UICollectionViewLayout,
+                        insetForSectionAt section: Int) -> UIEdgeInsets {
+        return UIEdgeInsets(top: 24, left: 2, bottom: 40, right: 2)
+    }
+    
+    func collectionView(_ collectionView: UICollectionView,
+                        layout collectionViewLayout: UICollectionViewLayout,
+                        minimumLineSpacingForSectionAt section: Int) -> CGFloat {
+        return 0 // ячейка строго под ячейкой
+    }
+    
+    func collectionView(_ collectionView: UICollectionView,
+                        layout collectionViewLayout: UICollectionViewLayout,
+                        minimumInteritemSpacingForSectionAt section: Int) -> CGFloat {
+        return 5 // отступ между ячейками по горизонтали
+    }
+}
 
 
 
